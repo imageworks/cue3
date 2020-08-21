@@ -23,17 +23,24 @@ import mock
 import os
 import unittest
 
+# Patch mock for missing magic method:
+mock._mock._magics.add('__round__')
+mock._mock._all_magics.add('__round__')
+
 import pyfakefs.fake_filesystem_unittest
 
 import rqd.rqconstants
 import rqd.rqcore
 import rqd.rqmachine
 import rqd.rqnetwork
+import rqd.rqplatform
+from rqd.rqplatform_linux import LinuxPlatform
 import rqd.rqnimby
 import rqd.rqutil
 import rqd.compiled_proto.host_pb2
 import rqd.compiled_proto.report_pb2
 import rqd.compiled_proto.rqd_pb2
+
 
 CPUINFO = """processor	: 0
 vendor_id	: GenuineIntel
@@ -157,7 +164,7 @@ CUDAINFO = ' TotalMem 1023 Mb  FreeMem 968 Mb'
 @mock.patch.object(rqd.rqutil.Memoize, 'isCached', new=mock.MagicMock(return_value=False))
 @mock.patch('platform.system', new=mock.MagicMock(return_value='Linux'))
 @mock.patch('os.statvfs', new=mock.MagicMock())
-@mock.patch('rqd.rqutil.getHostname', new=mock.MagicMock(return_value='arbitrary-hostname'))
+@mock.patch('rqd.rqplatform_base.Platform.getHostname', new=mock.MagicMock(return_value='arbitrary-hostname'))
 class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
 
     @mock.patch('subprocess.getoutput', new=mock.MagicMock(return_value=CUDAINFO))
@@ -177,25 +184,26 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         self.nimby.locked = False
         self.coreDetail = rqd.compiled_proto.report_pb2.CoreDetail(total_cores=2)
 
-        self.machine = rqd.rqmachine.Machine(self.rqCore, self.coreDetail)
+    def machine(self, pathCpuInfo=None):
+        return rqd.rqmachine.Machine(self.rqCore, self.coreDetail, LinuxPlatform(pathCpuInfo))
 
     @mock.patch('platform.system', new=mock.MagicMock(return_value='Linux'))
     def test_isNimbySafeToRunJobs(self):
         self.meminfo.set_contents(MEMINFO_MODERATE_USAGE)
 
-        self.assertTrue(self.machine.isNimbySafeToRunJobs())
+        self.assertTrue(self.machine().isNimbySafeToRunJobs())
 
     @mock.patch('platform.system', new=mock.MagicMock(return_value='Linux'))
     def test_isNimbySafeToRunJobs_noFreeMem(self):
         self.meminfo.set_contents(MEMINFO_NONE_FREE)
 
-        self.assertFalse(self.machine.isNimbySafeToRunJobs())
+        self.assertFalse(self.machine().isNimbySafeToRunJobs())
 
     @mock.patch('platform.system', new=mock.MagicMock(return_value='Linux'))
     def test_isNimbySafeToRunJobs_noFreeSwap(self):
         self.meminfo.set_contents(MEMINFO_NO_SWAP)
 
-        self.assertFalse(self.machine.isNimbySafeToRunJobs())
+        self.assertFalse(self.machine().isNimbySafeToRunJobs())
 
     @mock.patch.object(
         rqd.rqmachine.Machine, 'isNimbySafeToRunJobs', new=mock.MagicMock(return_value=True))
@@ -203,12 +211,12 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         self.loadavg.set_contents(LOADAVG_LOW_USAGE)
         rqd.rqconstants.MAXIMUM_LOAD = 5
 
-        self.assertTrue(self.machine.isNimbySafeToUnlock())
+        self.assertTrue(self.machine().isNimbySafeToUnlock())
 
     @mock.patch.object(
         rqd.rqmachine.Machine, 'isNimbySafeToRunJobs', new=mock.MagicMock(return_value=False))
     def test_isNimbySafeToUnlock_unsafeToRunJobs(self):
-        self.assertFalse(self.machine.isNimbySafeToUnlock())
+        self.assertFalse(self.machine().isNimbySafeToUnlock())
 
     @mock.patch.object(
         rqd.rqmachine.Machine, 'isNimbySafeToRunJobs', new=mock.MagicMock(return_value=True))
@@ -216,19 +224,19 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         self.loadavg.set_contents(LOADAVG_HIGH_USAGE)
         rqd.rqconstants.MAXIMUM_LOAD = 5
 
-        self.assertFalse(self.machine.isNimbySafeToUnlock())
+        self.assertFalse(self.machine().isNimbySafeToUnlock())
 
     def test_isDesktop_inittabDesktop(self):
         rqd.rqconstants.OVERRIDE_IS_DESKTOP = False
         self.fs.create_file(rqd.rqconstants.PATH_INITTAB, contents=INITTAB_DESKTOP)
 
-        self.assertTrue(self.machine.isDesktop())
+        self.assertTrue(self.machine().isDesktop())
 
     def test_isDesktop_inittabServer(self):
         rqd.rqconstants.OVERRIDE_IS_DESKTOP = False
         self.fs.create_file(rqd.rqconstants.PATH_INITTAB, contents=INITTAB_SERVER)
 
-        self.assertFalse(self.machine.isDesktop())
+        self.assertFalse(self.machine().isDesktop())
 
     def test_isDesktop_initTarget(self):
         rqd.rqconstants.OVERRIDE_IS_DESKTOP = False
@@ -237,12 +245,12 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         self.fs.create_file(symlink_target)
         self.fs.create_symlink(rqd.rqconstants.PATH_INIT_TARGET, symlink_target)
 
-        self.assertTrue(self.machine.isDesktop())
+        self.assertTrue(self.machine().isDesktop())
 
     def test_isDesktop_override(self):
         rqd.rqconstants.OVERRIDE_IS_DESKTOP = True
 
-        self.assertTrue(self.machine.isDesktop())
+        self.assertTrue(self.machine().isDesktop())
 
     @mock.patch('subprocess.check_output')
     def test_isUserLoggedInWithDisplay(self, checkOutputMock):
@@ -257,7 +265,7 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
 
         checkOutputMock.side_effect = checkOutputReturn
 
-        self.assertTrue(self.machine.isUserLoggedIn())
+        self.assertTrue(self.machine().isUserLoggedIn())
 
     @mock.patch('psutil.process_iter')
     def test_isUserLoggedInWithRunningProcess(self, processIterMock):
@@ -265,7 +273,7 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         gnomeProcess.name.return_value = 'gnome-session'
         processIterMock.return_value = [gnomeProcess]
 
-        self.assertTrue(self.machine.isUserLoggedIn())
+        self.assertTrue(self.machine().isUserLoggedIn())
 
     @mock.patch('psutil.process_iter')
     def test_isUserLoggedInWithNoDisplayOrProcess(self, processIterMock):
@@ -273,7 +281,7 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         gnomeProcess.name.return_value = 'some-random-process'
         processIterMock.return_value = [gnomeProcess]
 
-        self.assertFalse(self.machine.isUserLoggedIn())
+        self.assertFalse(self.machine().isUserLoggedIn())
 
     @mock.patch('time.time', new=mock.MagicMock(return_value=1570057887.61))
     def test_rssUpdate(self):
@@ -287,7 +295,8 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         runningFrame.pid = pid
         frameCache = {frameId: runningFrame}
 
-        self.machine.rssUpdate(frameCache)
+        machine = self.machine()
+        machine.rssUpdate(frameCache)
 
         updatedFrameInfo = frameCache[frameId].runningFrameInfo()
         self.assertEqual(616, updatedFrameInfo.max_rss)
@@ -299,77 +308,75 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
             {'list': [{'seconds': 1277.4100000000035, 'total_time': 44, 'pid': '105'}]},
             eval(updatedFrameInfo.attributes['ptree']))
 
-    @mock.patch.object(
-        rqd.rqmachine.Machine, '_Machine__enabledHT', new=mock.MagicMock(return_value=False))
+    # Test load avg on a machine without hyper-threading:
     def test_getLoadAvg(self):
         self.loadavg.set_contents(LOADAVG_HIGH_USAGE)
 
-        self.assertEqual(2038, self.machine.getLoadAvg())
+        cpuInfo = os.path.join(os.path.dirname(__file__), 'cpuinfo', '_cpuinfo_shark_8-4-2')
+        self.fs.add_real_file(cpuInfo)
+        machine = self.machine(cpuInfo)
 
-    @mock.patch.object(
-        rqd.rqmachine.Machine, '_Machine__enabledHT', new=mock.MagicMock(return_value=True))
+        self.assertEqual(2038, machine.getLoadAvg())
+
+    # Test load avg on a machine with hyper-threading:
+    # (Should be half the above value, with 2 HTs)
     def test_getLoadAvgHT(self):
         self.loadavg.set_contents(LOADAVG_HIGH_USAGE)
 
-        self.assertEqual(1019, self.machine.getLoadAvg())
+        cpuInfo = os.path.join(os.path.dirname(__file__), 'cpuinfo', '_cpuinfo_shark_ht_8-4-2-2')
+        self.fs.add_real_file(cpuInfo)
+        machine = self.machine(cpuInfo)
+        
+        self.assertEqual(1019, machine.getLoadAvg())
 
     def test_getBootTime(self):
         self.procStat.set_contents(PROC_STAT)
 
-        self.assertEqual(1569882758, self.machine.getBootTime())
+        self.assertEqual(1569882758, self.machine().getBootTime())
 
     @mock.patch(
         'subprocess.getoutput',
         new=mock.MagicMock(return_value=' TotalMem 1023 Mb  FreeMem 968 Mb'))
+    @mock.patch('rqd.rqconstants.ALLOW_GPU', True)
     def test_getGpuMemoryTotal(self):
-        if hasattr(self.machine, 'gpuNotSupported'):
-            delattr(self.machine, 'gpuNotSupported')
-        if hasattr(self.machine, 'gpuResults'):
-            delattr(self.machine, 'gpuResults')
-        rqd.rqconstants.ALLOW_GPU = True
-
-        self.assertEqual(1048576, self.machine.getGpuMemoryTotal())
+        self.assertEqual(1048576, self.machine().getGpuMemoryTotal())
 
     @mock.patch(
         'subprocess.getoutput',
         new=mock.MagicMock(return_value=' TotalMem 1023 Mb  FreeMem 968 Mb'))
+    @mock.patch('rqd.rqconstants.ALLOW_GPU', True)
     def test_getGpuMemory(self):
-        if hasattr(self.machine, 'gpuNotSupported'):
-            delattr(self.machine, 'gpuNotSupported')
-        if hasattr(self.machine, 'gpuResults'):
-            delattr(self.machine, 'gpuResults')
-        rqd.rqconstants.ALLOW_GPU = True
-
-        self.assertEqual(991232, self.machine.getGpuMemory())
+        self.assertEqual(991232, self.machine().getGpuMemory())
 
     def test_getPathEnv(self):
         self.assertEqual(
             '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-            self.machine.getPathEnv())
+            self.machine().getPathEnv())
 
     @mock.patch('tempfile.gettempdir')
     def test_getTempPath(self, gettempdirMock):
         tmpDir = '/some/random/tmpdir'
         gettempdirMock.return_value = tmpDir
 
-        self.assertEqual('%s/' % tmpDir, self.machine.getTempPath())
+        self.assertEqual('%s/' % tmpDir, self.machine().getTempPath())
 
     def test_getTempPathMcp(self):
         self.fs.create_dir('/mcp')
 
-        self.assertEqual('/mcp/', self.machine.getTempPath())
+        self.assertEqual('/mcp/', self.machine().getTempPath())
 
     @mock.patch('subprocess.Popen', autospec=True)
     def test_reboot(self, popenMock):
-        self.machine.reboot()
+        self.machine().reboot()
 
         popenMock.assert_called_with(['/usr/bin/sudo', '/sbin/reboot', '-f'])
 
     @mock.patch(
         'subprocess.getoutput',
         new=mock.MagicMock(return_value=' TotalMem 1023 Mb  FreeMem 968 Mb'))
+    @mock.patch('rqd.rqconstants.ALLOW_GPU', True)
     def test_getHostInfo(self):
-        hostInfo = self.machine.getHostInfo()
+        hostInfo = self.machine().getHostInfo()
 
         self.assertEqual(4105212, hostInfo.free_swap)
         self.assertEqual(25699176, hostInfo.free_mem)
@@ -398,7 +405,7 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
             total_cores=152, idle_cores=57, locked_cores=30, booked_cores=65)
         self.rqCore.getCoreInfo.return_value = coreDetail
 
-        hostReport = self.machine.getHostReport()
+        hostReport = self.machine().getHostReport()
 
         # Verify host info was copied into the report.
         self.assertEqual(4105212, hostReport.host.free_swap)
@@ -410,7 +417,7 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
         self.assertEqual(coreDetail, hostReport.core_info)
 
     def test_getBootReport(self):
-        bootReport = self.machine.getBootReport()
+        bootReport = self.machine().getBootReport()
 
         # Verify host info was copied into the report.
         self.assertEqual(4105212, bootReport.host.free_swap)
@@ -419,22 +426,20 @@ class MachineTests(pyfakefs.fake_filesystem_unittest.TestCase):
     def test_reserveHT(self):
         cpuInfo = os.path.join(os.path.dirname(__file__), 'cpuinfo', '_cpuinfo_shark_ht_8-4-2-2')
         self.fs.add_real_file(cpuInfo)
-        self.machine.testInitMachineStats(cpuInfo)
 
-        self.machine.setupHT()
-        tasksets = self.machine.reserveHT(300)
+        machine = self.machine(cpuInfo)
+
+        machine.setupHT()
+        tasksets = machine.reserveHT(300)
 
         self.assertEqual('0,8,1,9,2,10', tasksets)
 
-        self.machine.releaseHT(tasksets)
+        machine.releaseHT(tasksets)
 
-        self.assertEqual({0, 1, 2, 3, 4, 5, 6, 7}, self.machine._Machine__tasksets)
+        self.assertEqual({0, 1, 2, 3, 4, 5, 6, 7}, machine._Machine__tasksets)
 
 
 class CpuinfoTests(unittest.TestCase):
-
-    def setUp(self):
-        self.rqd = rqd.rqcore.RqCore()
 
     def test_shark(self):
         self.__cpuinfoTestHelper('_cpuinfo_shark_ht_8-4-2-2')
@@ -469,7 +474,9 @@ class CpuinfoTests(unittest.TestCase):
     def __cpuinfoTestHelper(self, pathCpuInfo):
         # File format: _cpuinfo_dub_x-x-x where x-x-x is totalCores-coresPerProc-numProcs
         pathCpuInfo = os.path.join(os.path.dirname(__file__), 'cpuinfo', pathCpuInfo)
-        renderHost, coreInfo = self.rqd.machine.testInitMachineStats(pathCpuInfo)
+        core = rqd.rqcore.RqCore(LinuxPlatform(pathCpuInfo))
+        renderHost = core.machine.getHostInfo()
+        coreInfo = core.machine.getCoreInfo()
         totalCores, coresPerProc, numProcs = pathCpuInfo.split('_')[-1].split('-')[:3]
         self.assertEqual(renderHost.num_procs, int(numProcs))
         self.assertEqual(renderHost.cores_per_proc, int(coresPerProc) * 100)
