@@ -81,11 +81,12 @@ ENABLE_PTREE = False
 
 # Nimby behavior:
 CHECK_INTERVAL_LOCKED = 60  # = seconds to wait before checking if the user has become idle
-MINIMUM_IDLE = 900          # seconds of idle time required before nimby unlocks
-MINIMUM_MEM = 524288        # If available memory drops below this amount, lock nimby (need to take into account cache)
+TIME_TO_WAIT_FOR_INTERACTION = 5  # = seconds to wait for an interaction
+MINIMUM_IDLE = 900  # seconds of idle time required before nimby unlocks
+MINIMUM_MEM = 524288  # If available memory drops below this amount, lock nimby (need to take into account cache)
 MINIMUM_SWAP = 1048576
-MAXIMUM_LOAD = 75           # If (machine load * 100 / cores) goes over this amount, don't unlock nimby
-                            # 1.5 would mean a max load of 1.5 per core
+MAXIMUM_LOAD = 75  # If (machine load * 100 / cores) goes over this amount,
+                   # don't unlock nimby 1.5 would mean a max load of 1.5 per core
 
 EXITSTATUS_FOR_FAILED_LAUNCH = 256
 EXITSTATUS_FOR_NIMBY_KILL = 286
@@ -113,6 +114,7 @@ OVERRIDE_IS_DESKTOP = None # Force rqd to run in 'desktop' mode
 OVERRIDE_PROCS = None # number of physical cpus. ex: None or 2
 OVERRIDE_MEMORY = None # in Kb
 OVERRIDE_NIMBY = None # True to turn on, False to turn off
+USE_NIMBY_PYNPUT = platform.system() == 'Windows'
 ALLOW_GPU = False
 ALLOW_PLAYBLAST = False
 LOAD_MODIFIER = 0 # amount to add/subtract from load
