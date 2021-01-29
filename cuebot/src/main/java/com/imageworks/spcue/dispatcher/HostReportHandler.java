@@ -162,7 +162,7 @@ public class HostReportHandler {
                 hostManager.setHostStatistics(host,
                         rhost.getTotalMem(), rhost.getFreeMem(),
                         rhost.getTotalSwap(), rhost.getFreeSwap(),
-                        rhost.getTotalMcp(), rhost.getFreeMcp(),
+                        rhost.getTotalScratch(), rhost.getFreeScratch(),
                         totalGpu, freeGpu,
                         rhost.getLoad(), new Timestamp(rhost.getBootTime() * 1000l),
                         rhost.getAttributesMap().get("SP_OS"));
