@@ -259,6 +259,19 @@ class JobMonitorTree(cuegui.AbstractTreeWidget.AbstractTreeWidget):
         for item in self.findItems("Finished", QtCore.Qt.MatchFixedString, COLUMN_STATE):
             self.removeItem(item)
 
+    def removeAllJobsExcept(self, keepList):
+        """Removes all jobs except the ones specified.
+
+        :param keepList: List of jobs to keep monitoring.
+        :type  keepList: list of opencue.wrappers.job.Job
+        """
+        keepKeys = set(cuegui.Utils.getObjectKey(job) for job in keepList)
+        for index in range(self.topLevelItemCount()):
+            existingItem = self.topLevelItem(index)
+            existingItemKey = cuegui.Utils.getObjectKey(existingItem.rpcObject)
+            if existingItemKey not in keepKeys:
+                self._removeItem(existingItem)
+
     def contextMenuEvent(self, e):
         """Creates a context menu when an item is right clicked.
         @param e: Right click QEvent
