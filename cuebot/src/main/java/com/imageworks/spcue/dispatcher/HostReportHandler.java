@@ -69,7 +69,7 @@ public class HostReportHandler {
     private BookingManager bookingManager;
     private HostManager hostManager;
     private BookingQueue bookingQueue;
-    private ThreadPoolExecutor reportQueue;
+    private HostReportQueue reportQueue;
     private ThreadPoolExecutor killQueue;
     private DispatchSupport dispatchSupport;
     private Dispatcher dispatcher;
@@ -130,8 +130,7 @@ public class HostReportHandler {
         reportQueue.execute(new DispatchHandleHostReport(report, this));
     }
 
-
-    public void handleHostReport(HostReport report, boolean isBoot) {
+    public void handleHostReport(HostReport report, boolean isBoot, long reportTime) {
         long startTime = System.currentTimeMillis();
         try {
 
@@ -587,14 +586,18 @@ public class HostReportHandler {
     private void updateMemoryUsage(List<RunningFrameInfo> rFrames) {
 
         for (RunningFrameInfo rf: rFrames) {
+            try {
+                FrameInterface frame = jobManager.getFrame(rf.getFrameId());
 
-            FrameInterface frame = jobManager.getFrame(rf.getFrameId());
+                dispatchSupport.updateFrameMemoryUsage(frame,
+                        rf.getRss(), rf.getMaxRss());
 
-            dispatchSupport.updateFrameMemoryUsage(frame,
-                    rf.getRss(), rf.getMaxRss());
-
-            dispatchSupport.updateProcMemoryUsage(frame,
-                    rf.getRss(), rf.getMaxRss(), rf.getVsize(), rf.getMaxVsize());
+                dispatchSupport.updateProcMemoryUsage(frame,
+                        rf.getRss(), rf.getMaxRss(), rf.getVsize(), rf.getMaxVsize());
+            } catch (EmptyResultDataAccessException e) {
+                logger.warn("HostReportHandler: updateMemoryUsage could not find frame. frameId: " + rf.getFrameId());
+                continue;
+            }
         }
 
         updateJobMemoryUsage(rFrames);
@@ -763,7 +766,7 @@ public class HostReportHandler {
 
                     if (rqd_kill) {
                         try {
-                        killQueue.execute(new DispatchRqdKillFrame(report.getHost().getName(),
+                            killQueue.execute(new DispatchRqdKillFrame(report.getHost().getName(),
                                 runningFrame.getFrameId(),
                                 "OpenCue could not verify this frame.",
                                 rqdClient));
@@ -810,11 +813,11 @@ public class HostReportHandler {
         this.bookingQueue = bookingQueue;
     }
 
-    public ThreadPoolExecutor getReportQueue() {
+    public HostReportQueue getReportQueue() {
         return reportQueue;
     }
 
-    public void setReportQueue(ThreadPoolExecutor reportQueue) {
+    public void setReportQueue(HostReportQueue reportQueue) {
         this.reportQueue = reportQueue;
     }
 

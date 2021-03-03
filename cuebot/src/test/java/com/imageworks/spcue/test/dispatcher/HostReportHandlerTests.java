@@ -21,6 +21,7 @@ package com.imageworks.spcue.test.dispatcher;
 
 import javax.annotation.Resource;
 
+import com.imageworks.spcue.dispatcher.HostReportQueue;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.test.annotation.Rollback;
@@ -40,6 +41,9 @@ import com.imageworks.spcue.service.HostManager;
 import com.imageworks.spcue.test.TransactionalTest;
 import com.imageworks.spcue.util.CueUtil;
 
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.Assert.assertEquals;
 
 @ContextConfiguration
@@ -57,7 +61,8 @@ public class HostReportHandlerTests extends TransactionalTest {
     @Resource
     Dispatcher dispatcher;
 
-    private static final String HOSTNAME = "beta";
+    private String hostname;
+    private String hostname2;
 
     @Before
     public void setTestMode() {
@@ -66,7 +71,11 @@ public class HostReportHandlerTests extends TransactionalTest {
 
     @Before
     public void createHost() {
-        hostManager.createHost(getRenderHost(),
+        hostname = UUID.randomUUID().toString().substring(0, 8);
+        hostname2 = UUID.randomUUID().toString().substring(0, 8);
+        hostManager.createHost(getRenderHost(hostname, HardwareState.UP),
+                adminManager.findAllocationDetail("spi","general"));
+        hostManager.createHost(getRenderHost(hostname2, HardwareState.UP),
                 adminManager.findAllocationDetail("spi","general"));
     }
 
@@ -79,13 +88,13 @@ public class HostReportHandlerTests extends TransactionalTest {
                 .build();
     }
 
-    private DispatchHost getHost() {
-        return hostManager.findDispatchHost(HOSTNAME);
+    private DispatchHost getHost(String hostname) {
+        return hostManager.findDispatchHost(hostname);
     }
 
-    private static RenderHost getRenderHost() {
+    private static RenderHost getRenderHost(String hostname, HardwareState state) {
         return RenderHost.newBuilder()
-                .setName(HOSTNAME)
+                .setName(hostname)
                 .setBootTime(1192369572)
                 .setFreeMcp(76020)
                 .setFreeMem(53500)
@@ -98,7 +107,7 @@ public class HostReportHandlerTests extends TransactionalTest {
                 .setNumProcs(2)
                 .setCoresPerProc(100)
                 .addTags("test")
-                .setState(HardwareState.UP)
+                .setState(state)
                 .setFacility("spi")
                 .putAttributes("SP_OS", "Linux")
                 .putAttributes("freeGpu", String.format("%d", CueUtil.MB512))
@@ -109,17 +118,41 @@ public class HostReportHandlerTests extends TransactionalTest {
     @Test
     @Transactional
     @Rollback(true)
-    public void testHandleHostReport() {
-        boolean isBoot = false;
+    public void testHandleHostReport() throws InterruptedException {
         CoreDetail cores = getCoreDetail(200, 200, 0, 0);
-        HostReport report = HostReport.newBuilder()
-                .setHost(getRenderHost())
+        HostReport report1 = HostReport.newBuilder()
+                .setHost(getRenderHost(hostname, HardwareState.UP))
                 .setCoreInfo(cores)
                 .build();
+        HostReport report2 = HostReport.newBuilder()
+                .setHost(getRenderHost(hostname2, HardwareState.UP))
+                .setCoreInfo(cores)
+                .build();
+        HostReport report1_2 = HostReport.newBuilder()
+                .setHost(getRenderHost(hostname, HardwareState.DOWN))
+                .setCoreInfo(getCoreDetail(200, 200, 100, 0))
+                .build();
 
-        hostReportHandler.handleHostReport(report, isBoot);
-        DispatchHost host = getHost();
-        assertEquals(host.lockState, LockState.OPEN);
+        hostReportHandler.handleHostReport(report1, false, System.currentTimeMillis());
+        DispatchHost host = getHost(hostname);
+        assertEquals(LockState.OPEN, host.lockState);
+        assertEquals(HardwareState.UP, host.hardwareState);
+        hostReportHandler.handleHostReport(report1_2, false, System.currentTimeMillis());
+        host = getHost(hostname);
+        assertEquals(HardwareState.DOWN, host.hardwareState);
+
+        // Test Queue thread handling
+        HostReportQueue queue = hostReportHandler.getReportQueue();
+        // Make sure jobs flow normally without any nullpointer exception
+        // Expecting results from a ThreadPool based class on JUnit is tricky
+        // A future test will be developed to better address the behavior of
+        // this feature
+        hostReportHandler.queueHostReport(report1); // HOSTNAME
+        hostReportHandler.queueHostReport(report2); // HOSTNAME2
+        hostReportHandler.queueHostReport(report1); // HOSTNAME
+        hostReportHandler.queueHostReport(report1); // HOSTNAME
+        hostReportHandler.queueHostReport(report1_2); // HOSTNAME
     }
+
 }
 

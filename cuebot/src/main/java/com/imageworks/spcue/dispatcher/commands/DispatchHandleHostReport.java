@@ -33,7 +33,8 @@ public class DispatchHandleHostReport implements Runnable {
     private HostReport hostReport;
     private boolean isBootReport;
     private HostReportHandler hostReportHandler;
-    public volatile int reportTime = (int) (System.currentTimeMillis() / 1000);
+
+    public volatile long reportTime = System.currentTimeMillis();
 
     public DispatchHandleHostReport(HostReport report, HostReportHandler rqdReportManager) {
         this.hostReport = report;
@@ -55,17 +56,28 @@ public class DispatchHandleHostReport implements Runnable {
     public void run() {
         new DispatchCommandTemplate() {
             public void wrapDispatchCommand() {
-                hostReportHandler.handleHostReport(hostReport, isBootReport);
+                HostReport report = hostReportHandler
+                        .getReportQueue()
+                        .removePendingHostReport(getKey());
+                if (report != null) {
+                    hostReportHandler.handleHostReport(report, isBootReport, reportTime);
+                } else {
+                    // Host report has already been handled by another thread
+                }
             }
         }.execute();
     }
 
-    public synchronized void updateReportTime() {
-        reportTime = (int) (System.currentTimeMillis() / 1000);
-    }
-
     public HostReport getHostReport() {
         return hostReport;
+    }
+
+    public String getHostName() {
+        return hostReport.getHost().getName();
+    }
+
+    public String getKey(){
+        return this.getHostName() + "/" + (this.isBootReport ? "1" : "0");
     }
 }
 
