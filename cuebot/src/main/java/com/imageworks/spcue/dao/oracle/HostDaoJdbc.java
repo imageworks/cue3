@@ -73,8 +73,8 @@ public class HostDaoJdbc extends JdbcDaoSupport implements HostDao {
             host.idleCores = rs.getInt("int_cores_idle");
             host.memory = rs.getInt("int_mem");
             host.idleMemory = rs.getInt("int_mem_idle");
-            host.gpu = rs.getInt("int_gpu");
-            host.idleGpu = rs.getInt("int_gpu_idle");
+            host.gpuMemory = rs.getInt("int_gpu");
+            host.idleGpuMemory = rs.getInt("int_gpu_idle");
             host.dateBooted = rs.getDate("ts_booted");
             host.dateCreated = rs.getDate("ts_created");
             host.datePinged = rs.getDate("ts_ping");
@@ -201,10 +201,10 @@ public class HostDaoJdbc extends JdbcDaoSupport implements HostDao {
             host.lockState = LockState.valueOf(rs.getString("str_lock_state"));
             host.memory = rs.getInt("int_mem");
             host.cores = rs.getInt("int_cores");
-            host.gpu= rs.getInt("int_gpu");
+            host.gpus = rs.getInt("int_gpu");
             host.idleMemory= rs.getInt("int_mem_idle");
             host.idleCores = rs.getInt("int_cores_idle");
-            host.idleGpu= rs.getInt("int_gpu_idle");
+            host.idleGpus = rs.getInt("int_gpu_idle");
             host.isNimby = rs.getBoolean("b_nimby");
             host.threadMode = rs.getInt("int_thread_mode");
             host.tags = rs.getString("str_tags");
@@ -602,6 +602,11 @@ public class HostDaoJdbc extends JdbcDaoSupport implements HostDao {
         } catch (EmptyResultDataAccessException e) {
             return 0;
         }
+    }
+
+    @Override
+    public int getStrandedGpus(HostInterface h) {
+        return 0;
     }
 
     private static final String IS_HOST_UP =
